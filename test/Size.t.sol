@@ -16,7 +16,7 @@ contract SizeTest is Test {
     uint256 constant ENGINE_BUDGET = 24_000;
 
     function test_deployedCodeFitsTheBudgets() public {
-        address v5 = vm.deployCode("ChessEngineV5.sol:ChessEngineV5"); // its own 200-run build (foundry.toml)
+        address v5 = vm.deployCode("ChessEngineV5.sol:ChessEngineV5"); // 200 runs (foundry.toml)
         address at = address(IMDUEL_HOOK_FLAGS | (uint160(0x512E) << 40));
         deployCodeTo("IMDuelHook.sol:IMDuelHook", abi.encode(IPoolManager(address(1)), IChessEngine(v5),
             Currency.wrap(address(2)), uint24(0), uint24(0), IHooks(address(0)), 1, 1, 1, 3), at);
