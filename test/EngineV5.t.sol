@@ -59,4 +59,19 @@ contract EngineV5Test is Chessboard {
         emit log_named_uint("max gas per choice", max);
         emit log_named_uint("runtime bytes", address(v5).code.length);
     }
+
+    /// The second look tests stalemate whatever the enemy keeps: here Qxa1 takes the last black piece that can move
+    /// (its pawns are blocked) and stalemates a won game (swarm audit, engine launch job).
+    function test_noStalemateOfAWonGame() public view {
+        uint256 b = put(put(put(put(put(put(0, "c1", 6), "b2", 5), "c4", 2), "a6", 1), "c6", 1), "g6", 1);
+        b = put(put(put(put(put(b, "h8", 14), "a1", 12), "a7", 9), "c7", 9), "g7", 9);
+        uint64[8] memory none;
+        uint16[2] memory accs = [uint16(10_000), 9_000]; // full accuracy and the hook's cap
+        for (uint256 a; a < 2; a++) {
+            for (uint256 seed; seed < 8; seed++) {
+                (uint16 m, Rules.Played memory p) = v5.play(b, side("c1"), side("h8"), false, accs[a], seed, none, 0, 0);
+                assertTrue(m != mv("b2", "a1") && p.status != 1, "no stalemate");
+            }
+        }
+    }
 }

@@ -12,7 +12,7 @@ import {Rules} from "../src/Rules.sol";
 import {IChessEngine} from "../src/IChessEngine.sol";
 import {IMDuelHook} from "../src/IMDuelHook.sol";
 import {Base} from "./Base.sol";
-import {BlockToken, SkimToken, ReenterToken} from "./Tokens.sol";
+import {BlockToken, SkimToken, ReenterToken, VoidToken} from "./Tokens.sol";
 
 /// Fails to choose; its fallback plays the first legal move.
 contract BrokenEngine is IChessEngine {
@@ -233,6 +233,22 @@ contract HostileTest is Base {
         hook.fundChest(pool, tokenTeam() == 1, 100e18);
         assertEq(hook.chest(id, tokenTeam()), 99e18, "the chest records what arrived");
         assertEq(claims(token), 99e18);
+    }
+
+    /// A token whose transferFrom returns nothing (USDT) funds a chest too (swarm audit, engine launch job).
+    function test_aTokenReturningNothingFundsAChest() public {
+        VoidToken t = new VoidToken();
+        MockERC20 q = deployHookAside(v5()); // its IMD: every duel needs a route
+        (Currency c0, Currency c1) = address(t) < address(q)
+            ? (Currency.wrap(address(t)), Currency.wrap(address(q)))
+            : (Currency.wrap(address(q)), Currency.wrap(address(t)));
+        (pool, id) = initPool(c0, c1, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
+        token = Currency.wrap(address(t));
+        t.mint(address(this), 1_000e18);
+        t.approve(address(hook), type(uint256).max);
+        hook.fundChest(pool, tokenTeam() == 1, 100e18);
+        assertEq(hook.chest(id, tokenTeam()), 100e18);
+        assertEq(claims(token), 100e18);
     }
 
     function test_reenteringTokenCannotBreakAPayout() public {

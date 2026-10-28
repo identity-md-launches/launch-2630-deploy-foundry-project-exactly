@@ -252,9 +252,8 @@ contract SliceTest is Base {
         return uint256(v < 0 ? -v : v);
     }
 
-    /// The IMD / ETH pool isn't ours to watch, so an ETH batch is capped instead: a whale's trade in an ETH duel
-    /// leaves a big ETH slice, converted ten minimums at a time.
-    function test_anEthBatchIsCapped() public {
+    /// A deep IMD / ETH route and a deep ETH duel, the hook converting from MIN.
+    function deployEthDuel() internal returns (PoolKey memory ethX) {
         deployFreshManagerAndRouters();
         (imd, duel, x) = (token("IMD"), token("IMDUEL"), token("X"));
         HookConfig memory c = config(v5(), imd);
@@ -265,13 +264,32 @@ contract SliceTest is Base {
         manager.initialize(route, SQRT_PRICE_1_1);
         vm.deal(address(this), 1e30);
         modifyLiquidityRouter.modifyLiquidity{value: 1e27}(route, ModifyLiquidityParams(-887220, 887220, 1e24, 0), "");
-        (PoolKey memory ethX,) = initPool(CurrencyLibrary.ADDRESS_ZERO, x, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
+        (ethX,) = initPool(CurrencyLibrary.ADDRESS_ZERO, x, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
         modifyLiquidityRouter.modifyLiquidity{value: 1e27}(ethX, ModifyLiquidityParams(-887220, 887220, 1e24, 0), "");
+    }
+
+    /// The IMD / ETH pool isn't ours to watch, so an ETH batch is capped instead: a whale's trade in an ETH duel
+    /// leaves a big ETH slice, converted ten minimums at a time.
+    function test_anEthBatchIsCapped() public {
+        PoolKey memory ethX = deployEthDuel();
         vm.recordLogs();
         swapNativeInput(ethX, true, -100e18, "", 100e18); // slice 0.1 ETH: a hundred minimums
         (uint256 spent,,) = converted(vm.getRecordedLogs());
         assertEq(spent, 10 * MIN, "ten minimums");
         assertEq(hook.pile(CurrencyLibrary.ADDRESS_ZERO.toId()), 0.1e18 - 10 * MIN, "the rest waits");
+    }
+
+    /// One ETH batch per block, however often convert is called: a caller who pushed the IMD / ETH price can't sell
+    /// the waiting pile into it batch after batch (swarm audit, engine launch job).
+    function test_oneEthBatchPerBlock() public {
+        PoolKey memory ethX = deployEthDuel();
+        swapNativeInput(ethX, true, -100e18, "", 100e18); // its own batch is this block's
+        uint256 waiting = hook.pile(CurrencyLibrary.ADDRESS_ZERO.toId());
+        for (uint256 i; i < 5; i++) hook.convert(CurrencyLibrary.ADDRESS_ZERO);
+        assertEq(hook.pile(CurrencyLibrary.ADDRESS_ZERO.toId()), waiting, "none more in the trade's block");
+        next(12);
+        for (uint256 i; i < 5; i++) hook.convert(CurrencyLibrary.ADDRESS_ZERO);
+        assertEq(hook.pile(CurrencyLibrary.ADDRESS_ZERO.toId()), waiting - 10 * MIN, "one in the next");
     }
 
     /// An ETH batch whose route leg buys nothing (no liquidity near the IMD / ETH price) leaves the ETH waiting and

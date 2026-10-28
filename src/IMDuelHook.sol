@@ -143,6 +143,7 @@ contract IMDuelHook is IUnlockCallback {
     Currency public imduel;
     uint24 internal mainFee;
     int24 internal mainSpacing;
+    uint48 internal ethBlock; // the block of the latest ETH batch: one per block (_convert)
     PoolId public mainId;
     // The main duel's price at its first swap in the latest block that traded it: block << 160 | sqrtPrice. Batches
     // buy within 0.1% (sqrt) of it, so a price pushed inside a block can't sell the hook $IMDUEL dear.
@@ -407,8 +408,9 @@ contract IMDuelHook is IUnlockCallback {
         if (c.isAddressZero()) {
             paid = manager.settle{value: amount}();
         } else {
-            // the return value is not trusted either way: settle() credits what actually arrived
-            IERC20Min(Currency.unwrap(c)).transferFrom(who, address(manager), amount);
+            // the return value is not read (some tokens return nothing): settle() credits what actually arrived
+            (bool ok,) = Currency.unwrap(c).call(abi.encodeCall(IERC20Min.transferFrom, (who, address(manager), amount)));
+            if (!ok) revert BadValue();
             paid = manager.settle();
         }
         manager.mint(address(this), c.toId(), paid);
@@ -435,6 +437,10 @@ contract IMDuelHook is IUnlockCallback {
         if (c == imd) {
             (spent, bought) = _swapClaims(_mainKey(), imd, amount, true);
         } else if (c.isAddressZero() && ethFee != 0) {
+            // one batch per block: its price limit follows the IMD / ETH price, so a caller who pushed that price
+            // must not sell the whole pile into it batch after batch
+            if (ethBlock == block.number) return;
+            ethBlock = uint48(block.number);
             uint256 imdIn;
             uint256 imdSpent;
             uint256 batch = amount / ETH_BATCH_MINS > minEth ? ETH_BATCH_MINS * minEth : amount;
@@ -455,7 +461,7 @@ contract IMDuelHook is IUnlockCallback {
     /// limit is 0.1% (sqrt) past the pool's price: for the `main` duel its price at the start of this block (the limit
     /// is a band, and an attacker could fill a band past a price it pushed with its own liquidity), for the IMD / ETH
     /// pool (deep, and not ours to watch) its price now; there a batch is capped instead, at a size not worth the
-    /// fees of pushing a deep pool. Nothing is bought once the price is past the limit.
+    /// fees of pushing a deep pool, and one runs per block (_convert). Nothing is bought once the price is past the limit.
     function _swapClaims(PoolKey memory key, Currency input, uint256 amountIn, bool main)
         internal
         returns (uint256 spent, uint256 got)

@@ -458,8 +458,7 @@ contract ChessEngineV5 is IChessEngine {
         unchecked {
             Bitboard.Pos memory n = c.n;
             Bitboard.makeMoveInto(c.p, n, m, c.white);
-            uint64 theirs = c.white ? n.black : n.white;
-            if (Bitboard.popcount(theirs) <= 3 && !Bitboard.inCheck(n, !c.white) && !Bitboard.hasLegalMove(n, !c.white)) {
+            if (!Bitboard.inCheck(n, !c.white) && !Bitboard.hasLegalMove(n, !c.white)) {
                 return c.theirs - c.ours; // stalemate: a draw, worth giving up our material lead
             }
             Maps memory e = _maps(n, !c.white);
